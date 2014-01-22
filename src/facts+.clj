@@ -627,6 +627,8 @@
        (postwalk (to-walker facts+transform-tests))
        ;; replace facts and perform magic on new provided statements
        (postwalk (to-walker facts+transform-facts))
+       ;; TODO recreate facts in quoted forms
+       ;; TODO recreate tests in quoted forms
        ;; propagate metadata / provided statements inward to all tests
        (postwalk facts+propagate-inward)
        ;; propagate metadata outward to enclosing facts
@@ -639,10 +641,8 @@
 (defmacro facts+2
   "
 
-  CAVEATS:
-  -all tests will be converted to facts (this is so that tests can be filtered
-   by metadata, while the metadata of the containing facts can be changed to
-   allow for deeper searches"
+  Current problems:
+  -Quoted tests/forms will be converted."
   [& forms]
   (facts+transform forms))
 
