@@ -327,8 +327,7 @@
 
 (defn facts+propagate-inward
   "Propagates metadata/provided fact of a fact to all inner tests, if the
-   input is a fact
-   TODO test"
+   input is a fact"
   [form]
   (if (not (facts+fact? form)) form
       (with-meta
@@ -344,6 +343,7 @@
 (defn facts+reduce-metadata
   "Returns outwardly merged metadata of all facts underneath the form."
   [form]
+  ;; FIXME using an atom and a walk as a hacky substitue for a stateful walk
   (let [acc (atom {})
         add-meta #(swap! acc facts+reverse-merge-meta (:metadata %))]
     ;; Using prewalk order so that there is a consistent left to right
