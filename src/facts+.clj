@@ -3,6 +3,10 @@
         [midje.production-mode :only [user-desires-checking?]]
         [clojure.walk :only [prewalk prewalk-replace postwalk]]))
 
+;; TODO rename facts+... functions now that they have their own namespace
+
+(declare facts+)
+
 (defmulti provided-magic
   "Use defprovided/defnprovided instead. Dispatches on symbol converted from
    string/keyword/symbol."
@@ -38,245 +42,6 @@
 (defnprovided called [f num] (f & anything) => irrelevant :times num)
 
 (defnprovided always [f value] (f & anything) => value)
-
-(defn form-type
-  "return a keyword based on the type of the input form"
-  [form]
-  (cond
-   (keyword? form) :metadata
-   (string? form) :description
-   (seq? form) (case (first form)
-                 provided :provided
-                 provided+ :provided+
-                 :misc)
-   ;; TODO handle these: they could be metadata
-   ;; https://github.com/marick/Midje/wiki/Metadata#defining-metadata
-   :else (throw (IllegalArgumentException. (str "form-type else: " form)))))
-
-(defn gather-tests
-  "groups forms that are tests (based on the position of the => arrow), and
-   forms that are not tests"
-  [forms]
-  (let [forms (vec forms)
-        indices (filter identity (map-indexed (fn [i v]
-                                                (when (= '=> v) i))
-                                              forms))
-        surrounding (mapcat (juxt dec identity inc) indices)
-        surrounding-set (set surrounding)
-        grouped (group-by #(contains? surrounding-set %) (range (count forms)))
-        test-indices (grouped true)
-        other-indices (grouped false)
-        test-forms (map #(nth forms %) test-indices)
-        other-forms (map #(nth forms %) other-indices)]
-    ;; makes sure there is no overlap
-    (assert (= (count surrounding) (count surrounding-set)))
-    [test-forms other-forms]))
-
-(defn facts+provided
-  "merges provided and provided+ values into one provided block"
-  [p p+]
-  (let [ps (mapcat rest p)
-        p+s (mapcat rest p+)
-        transformed (mapcat (fn [[k v]] ((provided-magic k) v))
-                            (partition 2 p+s))]
-  (concat ps transformed)))
-
-(defn facts+description
-  "creates a description for multiple descriptions"
-  [prev-description descriptions]
-  (let [descriptions (concat (when prev-description [prev-description])
-                             descriptions)]
-    (when (seq descriptions)
-      (list (apply str (interpose " - " descriptions))))))
-
-(defn facts+helper
-  "See facts+. Performs the features of facts+ on a group of forms."
-  ([forms] (facts+helper forms nil [] []))
-  ([forms prev-description prev-provided prev-metadata]
-     (let [[tests others] (gather-tests forms)
-           {:keys [description metadata provided provided+ misc]}
-           (group-by form-type others)
-           new-metadata (concat prev-metadata metadata)
-           new-description (facts+description prev-description description)
-           new-provided (concat prev-provided
-                                (facts+provided provided provided+))
-           new-tests (mapcat #(concat % [`(provided ~@new-provided)])
-                             (partition 3 tests))
-           ;; TODO recurse into misc to work for forms like let, around, etc.
-           new-misc (mapcat #(facts+helper (rest %)
-                                            (first new-description)
-                                            new-provided
-                                            new-metadata)
-                             misc)]
-       (concat [`(fact ~@new-description ~@new-metadata ~@new-tests)]
-               new-misc))))
-
-(defmacro facts+
-  "Midje's facts, but with modifications, namely:
-   -merging provided clauses
-   -propagating metadata
-   -propagating provided clauses
-   -allowing for magic provided statements
-
-   Works with:
-   -midje-mode
-
-   Still unconfirmed:
-   -tabular
-   -against-background
-   -fact-group
-
-   Caveats:
-   -tests under the same fact must share provided forms
-   -let bindings and any other inner forms will not have metadata from inner
-    facts propagate outward properly. this is because in order to get to an
-    inner fact, all previous outer facts must pass the filter first. this is
-    normally handled by separating the inner fact into a new fact, but this
-    can't be done with for example a let form because it would change the
-    meaning of the code:
-      Normal Example:
-        (fact :a (fact :b 1 => 1)) ;; filter wont work for :b
-      With facts+:
-        (facts+ :a (fact :b 1 => 1))
-      is converted to:
-        (fact :a :b 1 => 1)
-      This can't be done (with my current knowledge of midje)  with let et al
-      because it may cause recomputing expensive / side effect generating code.
-
-   Current limitations:
-   -facts+ doesn't recurse down all forms (e.g. let blocks)
-   -facts+ only supports keyword metadata
-   -facts within tests won't be propagated to. for example:
-    (do 1 => 1 1) => 1
-
-   Assumptions:
-   -tests only consist of 3 forms, with the => symbol in the middle
-   -metadata is only in the form of keywords
-   -only fact, facts, facts+, provided, and provided+ are handled specially"
-  [& forms]
-  (when (user-desires-checking?)
-    (let [new-forms (facts+helper forms)]
-      `(do ~@(doall (map #(with-meta % (meta &form)) new-forms))))))
-
-(facts+ :facts+ :provided-magic
-  "About provided-magic"
-
- (fact "About nocall"
-   ((provided-magic :nocall) 'free)
-   => '((free & anything) => irrelevant :times 0))
-
- (fact "About ignore"
-   ((provided-magic :ignore) 'free)
-   => '((free & anything) => irrelevant :times truthy)
-
-   (fact
-     1 => 1
-     (provided-magic :aaaa) => irrelevant
-     (provided+ :ignore provided-magic)))
-
- (fact "About called"
-   ((provided-magic :called) ['free 4])
-   => '((free & anything) => irrelevant :times 4)
-
-   (fact
-     (list (provided-magic) (provided-magic)) => irrelevant
-     (provided-magic (provided-magic)) => irrelevant
-     (provided-magic (provided-magic 3)) => irrelevant
-     (provided+ :called [provided-magic 2])))
-
- (fact "About always"
-   ((provided-magic :always) ['free 42])
-   => '((free & anything) => 42)
-
-   (fact
-     (provided-magic) => 42
-     (provided-magic 1) => 42
-     (provided-magic nil 3 (range)) => 42
-     (provided+ :always [provided-magic 42])))
- )
-
-;; ----------
-;; Demonstrating facts+
-;; ----------
-
-;; facts+ will share/propagate provided forms
-(facts+
- :facts+
- (facts+helper 1) => 1
- (facts+helper 1) => 1
- (provided (facts+helper 1) => 1))
-;; fact/facts will not
-(facts
- :facts+
- (facts+helper 1) => 1
- (provided (facts+helper 1) => 1)
- (facts+helper 1) => 1
- (provided (facts+helper 1) => 1))
-
-;; facts+ can inherit in a tree-like pattern to create more complex tests /
-;; minimize repetition
-(facts+
- :facts+
- (facts
-   (+ (facts+helper 1) (facts+helper 2)) => 3
-   (provided (facts+helper 2) => 2))
- (facts
-   (+ (facts+helper 1) (facts+helper 2)) => 4
-   (provided (facts+helper 2) => 3))
- (provided (facts+helper 1) => 1))
-
-;; prevent repeating repetitive provided statements as well
-(facts+
- :facts+
- 1 => 1
- (provided+ :nocall facts+helper))
-
-;; write new shortcuts for your own use cases
-(defprovided odd-calls (odd-calls & anything) => irrelevant :times odd?)
-
-(facts+ :facts+
- "About odd-calls"
- ((provided-magic :odd-calls) 'free)
- => '((free & anything) => irrelevant :times odd?))
-
-(facts+
- :facts+
- (facts+helper 3) => irrelevant ; this causes the provided form to fail
- (provided+ :odd-calls facts+helper))
-
-;; propagate metadata
-(facts+
- :facts+
- (fact (fact (fact 1 => 1)))) ;; gets called when filtering for facts+
-(facts
- :facts+
- (fact 1 => 1)) ;; doesn't get called when filtering for facts+
-
-;; don't ignore extra docstrings
-(facts+
- :facts+
- "1"
- (facts "2"
-   (facts "3"
-     1 => 1) ;; docstring is "1 - 2 - 99 - 3"
-   "99"))
-(facts :facts+
- "1"
- (facts "2" :facts+
-   (facts "3" :facts+
-     1 => 1) ;; docstring is "1 - 2 - 3"
-   "99"))
-
-
-;; Below this is the new implementation
-
-(defn seq-to-map
-  "Converts a sequence of pairs of vectors to a map"
-  [s]
-  (->> s (apply concat) (apply hash-map)))
-
-(facts "About seq-to-map"
-  (seq-to-map '([3 4] [1 [2]])) => {3 4 1 [2]})
 
 (defn to-walker
   "Converts a function that is meant to be applied on sequences to one that
@@ -474,10 +239,6 @@
   (facts+provided+ `(:nocall foo :nocall bar))
   => (contains ['=> :times 0 '=> :times 0] :gaps-ok))
 
-(declare provided+)
-
-(declare provided*)
-
 (defn facts+gather-provided
   "Scan through forms and combine/transform provided forms"
   [forms]
@@ -575,12 +336,6 @@
                                     (:data form)))
         (meta form))))
 
-(defn i [x]
-  (prn)
-  (prn x)
-  (prn)
-  x)
-
 (defn facts+reverse-merge-meta
   "Merges in reverse (to prefer keeping fields in older metadata)"
   [old-meta new-meta]
@@ -638,39 +393,58 @@
        ;; recreate tests as facts (so that they can be filtered)
        (postwalk facts+recreate-tests)))
 
-(defmacro facts+2
-  "
+(defmacro facts+
+  "Midje's facts, but with modifications centered around a hierarchical
+   structure of facts, namely:
+   -propagating metadata (both inward and outward) to minimize repetition
+    and manually handling propagation
+   -propagating provided* clauses
+   -allowing for magic provided+ statements
 
-  Current problems:
-  -Quoted tests/forms will be converted."
+   Still untested:
+   -tabular
+   -against-background
+   -fact-group
+
+   Caveats:
+   -Quoted tests/forms will be converted (this can be easily solved)
+
+
+   Current limitations:
+   -facts+ doesn't recurse down all forms (e.g. let blocks)
+   -facts+ only supports keyword metadata
+   -facts within tests won't be propagated to. for example:
+    (do 1 => 1 1) => 1
+
+   Assumptions:
+   -tests only consist of 3 forms, with the => symbol in the middle
+   -only fact, facts, facts+, provided, and provided+ are handled specially"
   [& forms]
   (facts+transform forms))
 
-(defn f [] 1)
+;; ----------
+;; Demonstrating facts+
+;; ----------
 
-(facts+2
- :a
- (f) => 3
- (fact :b (f) => 3
-   (fact :c (f) => 3))
- (provided* (f) => 3)
- (let [x 3]
-   (f) => 3
-   (f)) => 3)
-
-;; TODO delete unused functions
-
+(declare f facts+helper)
 
 ;; facts+ will share/propagate provided forms
-(facts+2
+(facts+
  :facts+
  (facts+helper 1) => 1
  (facts+helper 1) => 1
  (provided* (facts+helper 1) => 1))
+;; fact/facts will not
+(facts
+ :facts+
+ (facts+helper 1) => 1
+ (provided (facts+helper 1) => 1)
+ (facts+helper 1) => 1
+ (provided (facts+helper 1) => 1))
 
 ;; facts+ can inherit in a tree-like pattern to create more complex tests /
 ;; minimize repetition
-(facts+2
+(facts+
  :facts+
  (facts
    (+ (facts+helper 1) (facts+helper 2)) => 3
@@ -680,8 +454,18 @@
    (provided (facts+helper 2) => 3))
  (provided* (facts+helper 1) => 1))
 
+(facts+
+ :a
+ (f) => 3
+ (fact :b (f) => 3
+   (fact :c (f) => 3))
+ (provided* (f) => 3)
+ (let [x 3]
+   (f) => 3
+   (f)) => 3)
+
 ;; prevent repeating repetitive provided statements as well
-(facts+2
+(facts+
  :facts+
  1 => 1
  (provided+ :nocall facts+helper))
@@ -695,13 +479,13 @@
  ((provided-magic :odd-calls) 'free)
  => '((free & anything) => irrelevant :times odd?))
 
-(facts+2
+(facts+
  :facts+
  (facts+helper 3) => irrelevant ; this causes the provided form to fail
  (provided+ :odd-calls facts+helper))
 
 ;; propagate metadata
-(facts+2
+(facts+
  :facts+
  (fact (fact (fact 1 => 1)))) ;; gets called when filtering for facts+
 (facts
@@ -709,7 +493,7 @@
  (fact 1 => 1)) ;; doesn't get called when filtering for facts+
 
 ;; don't ignore extra docstrings
-(facts+2
+(facts+
  :facts+
  "1"
  (facts "2"
@@ -722,3 +506,43 @@
    (facts "3" :facts+
      1 => 1) ;; docstring is "1 - 2 - 3"
    "99"))
+
+(facts :facts+ :provided-magic
+  "About provided-magic"
+  (fact "About nocall"
+    ((provided-magic :nocall) 'free)
+    => '((free & anything) => irrelevant :times 0))
+
+  (fact "About ignore"
+    ((provided-magic :ignore) 'free)
+    => '((free & anything) => irrelevant :times truthy))
+
+  (fact "About called"
+    ((provided-magic :called) ['free 4])
+    => '((free & anything) => irrelevant :times 4))
+
+  (fact "About always"
+    ((provided-magic :always) ['free 42])
+    => '((free & anything) => 42))
+  )
+
+(facts+ :facts+ :provided-magic
+  "About provided-magic"
+
+ (fact "About ignore"
+   1 => 1
+   (provided-magic :aaaa) => irrelevant
+   (provided+ :ignore provided-magic))
+
+ (fact "About called"
+   (list (provided-magic) (provided-magic)) => irrelevant
+   (provided-magic (provided-magic)) => irrelevant
+   (provided-magic (provided-magic 3)) => irrelevant
+   (provided+ :called [provided-magic 2]))
+
+ (fact "About always"
+   (provided-magic) => 42
+   (provided-magic 1) => 42
+   (provided-magic nil 3 (range)) => 42
+   (provided+ :always [provided-magic 42]))
+ )
