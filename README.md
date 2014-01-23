@@ -2,7 +2,7 @@
 
 A Clojure library designed to ... well, that part is up to you.
 
-https://www.codeship.io/projects/080ac750-65fd-0131-7f40-6e45f76890ff/status
+![Codeship](https://www.codeship.io/projects/080ac750-65fd-0131-7f40-6e45f76890ff/status)
 
 ## Usage
 
