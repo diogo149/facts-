@@ -3,6 +3,7 @@
 A Clojure library designed to ... well, that part is up to you.
 
 ![Codeship](https://www.codeship.io/projects/080ac750-65fd-0131-7f40-6e45f76890ff/status)
+[![Build Status](https://travis-ci.org/diogo149/facts-.png?branch=master)](https://travis-ci.org/diogo149/facts-)
 
 ## Usage
 
