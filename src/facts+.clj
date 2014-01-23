@@ -546,3 +546,5 @@
    (provided-magic nil 3 (range)) => 42
    (provided+ :always [provided-magic 42]))
  )
+
+(fact 1 => 2)
