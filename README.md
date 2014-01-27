@@ -57,12 +57,12 @@ Similar to Midje's `fact` or `facts` macro, but with modifications centered arou
  (fact (fact (fact 1 => 1)))) ;; gets called when filtering for facts+
 
 (facts+ :a
-  (fact :b 1 => 1))
+  (fact :b 1 => 1)) ;; gets called when filtering for :a, :b, or both
 ```
 
 ## License
 
-Copyright © 2014 FIXME
+Copyright © 2014 diogo149
 
 Distributed under the Eclipse Public License either version 1.0 or (at
 your option) any later version.
