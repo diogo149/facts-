@@ -78,7 +78,7 @@
  '(a) '(a a) '(:a a)
  '(a (b)) '(a (b b) a (b b)) '(:a a (:a b)))
 
-(defn facts+test?
+(defn test?
   "Whether or not the input is a valid representation of a test."
   [form]
   (if (not (map? form)) false
@@ -88,8 +88,8 @@
              (-> form meta ::facts+ (= :test))))))
 
 (tabular
- (facts "About facts+test?"
-   (facts+test? in) => out)
+ (facts "About test?"
+   (test? in) => out)
  in out
  '() falsey
  {:a :b} falsey
@@ -102,7 +102,7 @@
  (with-meta {:provided [] :test {}} {::facts+ :test}) falsey
  (with-meta {:provided {} :test []} {::facts+ :test}) falsey)
 
-(defn facts+fact?
+(defn fact?
   "Whether or not the input is a valid representation of a fact."
   [form]
   (if (not (map? form)) false
@@ -113,8 +113,8 @@
              (-> form meta ::facts+ (= :fact))))))
 
 (tabular
- (facts "About facts+fact?"
-   (facts+fact? in) => out)
+ (facts "About fact?"
+   (fact? in) => out)
  in out
   '() falsey
  {:a :b} falsey
@@ -129,7 +129,7 @@
  (with-meta {:provided [] :metadata [] :data []} {::facts+ :fact}) falsey
  '((f x) => 3) falsey)
 
-(defn facts+transform-tests
+(defn transform-tests
   "Scan through form and replaces tests with easily parsable format"
   [forms]
   (if (#{'provided+ 'provided* 'provided} (first forms))
@@ -149,8 +149,8 @@
        :else (recur (rest forms) (conj done f1))))))
 
 (tabular
- (facts "About facts+transform-tests"
-   (facts+transform-tests forms) => done)
+ (facts "About transform-tests"
+   (transform-tests forms) => done)
  forms done
  '() '()
  '(x y) '(x y)
@@ -160,7 +160,7 @@
  '(x => y) #(= :test (::facts+ (meta (first %))))
  '(provided 1 => 2) '(provided 1 => 2))
 
-(defn facts+merge-meta
+(defn merge-meta
   "Used for merging midje metadata that doesn't overwrite old data."
   [metadata new-metadata]
   (let [merged (merge metadata new-metadata)
@@ -176,8 +176,8 @@
            (when merge-desc {:midje/description merge-desc}))))
 
 (tabular
- (facts "About facts+merge-meta"
-   (facts+merge-meta m1 m2) => m3)
+ (facts "About merge-meta"
+   (merge-meta m1 m2) => m3)
  m1 m2 m3
  {} {:a 1} {:a 1}
  {:b 2} {} {:b 2}
@@ -191,7 +191,7 @@
  {} {:midje/description "b"} {:midje/description "b"}
  {:midje/description "c"} {:midje/description "d"} {:midje/description "c - d"})
 
-(defn facts+gather-meta
+(defn gather-meta
   "Scan through forms and combine metadata"
   [forms]
   (loop [[fst & rst :as forms] (seq forms)
@@ -208,12 +208,12 @@
      (string? fst) (recur (conj rst {:midje/description fst}) metadata done)
      (map? fst) (if (::facts+ (meta fst))
                   (recur rst metadata (concat done [fst]))
-                  (recur rst (facts+merge-meta metadata fst) done))
+                  (recur rst (merge-meta metadata fst) done))
      :else (recur rst metadata (concat done [fst])))))
 
 (tabular
- (facts "About facts+gather-meta"
-   (facts+gather-meta forms) => [metadata done])
+ (facts "About gather-meta"
+   (gather-meta forms) => [metadata done])
  forms metadata done
  '() {} '()
  '(:a) {:a true} '()
@@ -230,16 +230,16 @@
  [{:a 1}] {:a 1} []
  [(with-meta {:a 1} {::facts+ true})] {} [{:a 1}])
 
-(defn facts+provided+
-  "Transforms provided* forms"
+(defn transform-provided+
+  "Transforms provided+ forms"
   [forms]
   (mapcat (fn [[k v]] ((provided-magic k) v)) (partition 2 forms)))
 
-(facts "About facts+provided+"
-  (facts+provided+ `(:nocall foo :nocall bar))
+(facts "About transform-provided+"
+  (transform-provided+ `(:nocall foo :nocall bar))
   => (contains ['=> :times 0 '=> :times 0] :gaps-ok))
 
-(defn facts+gather-provided
+(defn gather-provided
   "Scan through forms and combine/transform provided forms"
   [forms]
   (loop [[h & t :as forms] forms
@@ -251,13 +251,13 @@
               (cond
                (= f 'provided*) (recur t (concat provided (rest h)) done)
                (= f 'provided+) (recur t (concat provided
-                                                 (facts+provided+ (rest h)))
+                                                 (transform-provided+ (rest h)))
                                        done)
                :else (recur t provided (conj done h))))))))
 
 (tabular
- (facts "About facts+gather-provided"
-   (facts+gather-provided forms) => [prov done])
+ (facts "About gather-provided"
+   (gather-provided forms) => [prov done])
  forms prov done
  '(3 4 5) '() '(3 4 5)
  '((provided* 3 4)) '(3 4) '()
@@ -265,45 +265,45 @@
  '((provided* 1) 2 (provided* 3)) '(1 3) '(2))
 
 (tabular
- (facts "About facts+gather-provided w/ provided+"
-   (facts+gather-provided forms) => [prov done]
+ (facts "About gather-provided w/ provided+"
+   (gather-provided forms) => [prov done]
    (provided
      (provided-magic & anything) => (fn [x] [:hi])))
  forms prov done
  '((provided+ :nocall a) (provided* c)) '(:hi c) '())
 
-(defn facts+transform-fact
+(defn transform-fact
   "Transforms a sequence of forms in a fact into a parsable format"
   [forms]
   {:pre [(seq? forms)]}
-  (let [transformed (facts+transform-tests forms)
-        [metadata no-meta] (facts+gather-meta transformed)
-        [prov remaining] (facts+gather-provided no-meta)]
+  (let [transformed (transform-tests forms)
+        [metadata no-meta] (gather-meta transformed)
+        [prov remaining] (gather-provided no-meta)]
     (with-meta
       {:metadata metadata :provided prov :data remaining}
       {::facts+ :fact})))
 
-(facts "About facts+transform-fact"
-  (facts+transform-fact '(:a :b :c {:d "hi"} c a => b (provided c)))
+(facts "About transform-fact"
+  (transform-fact '(:a :b :c {:d "hi"} c a => b (provided c)))
   =>  {:metadata {:midje/name "c", :d "hi", :c true, :b true, :a true},
        :provided [],
        :data [{:test '(a => b)
                :provided '(c)}]}
-  (facts+transform-fact '(:a 'b "c")) => #(= :fact (::facts+ (meta %)))
-  (facts+transform-fact 3) => (throws AssertionError)
-  (facts+transform-fact '(:a)) => {:metadata {:a true} :provided [] :data []}
-  (facts+transform-fact '()) => {:metadata {} :provided [] :data []})
+  (transform-fact '(:a 'b "c")) => #(= :fact (::facts+ (meta %)))
+  (transform-fact 3) => (throws AssertionError)
+  (transform-fact '(:a)) => {:metadata {:a true} :provided [] :data []}
+  (transform-fact '()) => {:metadata {} :provided [] :data []})
 
-(defn facts+transform-facts
+(defn transform-facts
   "Transforms fact forms and returns other forms unchanged"
   [[h & t :as forms]]
   (if (#{'fact 'facts 'facts+} h)
-    (facts+transform-fact (apply list t))
+    (transform-fact (apply list t))
     forms))
 
 (tabular
- (facts "About facts+transform-facts"
-   (facts+transform-facts forms) => result)
+ (facts "About transform-facts"
+   (transform-facts forms) => result)
  forms result
  '(:a) '(:a)
  '(fact) {:metadata {} :provided [] :data []}
@@ -311,65 +311,65 @@
  '(fact) #(= :fact (::facts+ (meta %)))
  '(:a) #(not= :fact (::facts+ (meta %))))
 
-(defn facts+propagate-to-tests
+(defn propagate-to-tests
   "Adds metadata/provided parts of a fact to a test if the input is a test
    TODO test"
   [{:keys [metadata provided] :as fact} form]
-  (if (not (facts+test? form)) form
+  (if (not (test? form)) form
       (let [test (:test form)
             test-prov (:provided form)
             test-metadata (:metadata form)]
         (with-meta
-          {:metadata (facts+merge-meta metadata test-metadata)
+          {:metadata (merge-meta metadata test-metadata)
            :test test
            :provided (concat test-prov provided)}
           (meta form)))))
 
-(defn facts+propagate-inward
+(defn propagate-inward
   "Propagates metadata/provided fact of a fact to all inner tests, if the
    input is a fact"
   [form]
-  (if (not (facts+fact? form)) form
+  (if (not (fact? form)) form
       (with-meta
-        (assoc form :data (postwalk #(facts+propagate-to-tests form %)
+        (assoc form :data (postwalk #(propagate-to-tests form %)
                                     (:data form)))
         (meta form))))
 
-(defn facts+reverse-merge-meta
+(defn reverse-merge-meta
   "Merges in reverse (to prefer keeping fields in older metadata)"
   [old-meta new-meta]
   (merge (dissoc new-meta :midje/name :midje/description) old-meta))
 
-(defn facts+reduce-metadata
+(defn reduce-metadata
   "Returns outwardly merged metadata of all facts underneath the form."
   [form]
   ;; FIXME using an atom and a walk as a hacky substitue for a stateful walk
-  (let [acc (atom {})
-        add-meta #(swap! acc facts+reverse-merge-meta (:metadata %))]
+  (let [acc (atom (:metadata form))
+        add-meta #(swap! acc reverse-merge-meta (:metadata %))]
     ;; Using prewalk order so that there is a consistent left to right
     ;; pattern of merging
-    (prewalk (fn [x] (when (facts+fact? x) (add-meta x)) x) form)
+    (prewalk (fn [x] (when (test? x) (add-meta x)) x) form)
     @acc))
 
-(defn facts+propagate-outward
+(defn propagate-outward
   "Propagates metadata of all inner tests to a fact, if the input is a fact"
   [form]
-  (if (not (facts+fact? form)) form
+  (if (not (fact? form)) form
       (with-meta
-        (assoc form :metadata (facts+reduce-metadata form))
+        (assoc form :metadata (reduce-metadata form))
         (meta form))))
 
-(defn facts+recreate-facts
+(defn recreate-facts
   "Recreates the normal clojure form of facts."
   [form]
-  (if (not (facts+fact? form)) form
+  (if (not (fact? form)) form
       (let [{:keys [metadata data]} form]
         (concat (list `fact metadata) data))))
 
-(defn facts+recreate-tests
+(defn recreate-tests
   "Recreates the normal clojure form of tests"
   [form]
-  (if (not (facts+test? form)) form
+  (if (not (test? form)) form
       (let [{:keys [metadata test provided]} form]
         (concat (list `fact metadata)
                 test
@@ -379,46 +379,41 @@
   [forms]
   (->> (concat ['facts+] forms)
        ;; replace tests with easily parsable data structures
-       (postwalk (to-walker facts+transform-tests))
+       (postwalk (to-walker transform-tests))
        ;; replace facts and perform magic on new provided statements
-       (postwalk (to-walker facts+transform-facts))
+       (postwalk (to-walker transform-facts))
        ;; TODO recreate facts in quoted forms
        ;; TODO recreate tests in quoted forms
        ;; propagate metadata / provided statements inward to all tests
-       (postwalk facts+propagate-inward)
+       (postwalk propagate-inward)
        ;; propagate metadata outward to enclosing facts
-       (postwalk facts+propagate-outward)
+       (postwalk propagate-outward)
        ;; recreate facts
-       (postwalk facts+recreate-facts)
+       (postwalk recreate-facts)
        ;; recreate tests as facts (so that they can be filtered)
-       (postwalk facts+recreate-tests)))
+       (postwalk recreate-tests)))
 
 (defmacro facts+
   "Midje's facts, but with modifications centered around a hierarchical
    structure of facts, namely:
    -propagating metadata (both inward and outward) to minimize repetition
     and manually handling propagation
-   -propagating provided* clauses
+   -sharing/inheriting provided* forms
    -allowing for magic provided+ statements
 
    Still untested:
    -tabular
    -against-background
    -fact-group
+   -possibly other midje features...
 
    Caveats:
    -Quoted tests/forms will be converted (this can be easily solved)
 
-
-   Current limitations:
-   -facts+ doesn't recurse down all forms (e.g. let blocks)
-   -facts+ only supports keyword metadata
-   -facts within tests won't be propagated to. for example:
-    (do 1 => 1 1) => 1
-
    Assumptions:
    -tests only consist of 3 forms, with the => symbol in the middle
-   -only fact, facts, facts+, provided, and provided+ are handled specially"
+   -only fact, facts, facts+, provided, provided+ and provided* are
+    handled specially"
   [& forms]
   (facts+transform forms))
 
@@ -426,33 +421,33 @@
 ;; Demonstrating facts+
 ;; ----------
 
-(declare f facts+helper)
+(declare f)
 
 ;; facts+ will share/propagate provided forms
 (facts+
  :facts+
- (facts+helper 1) => 1
- (facts+helper 1) => 1
- (provided* (facts+helper 1) => 1))
+ (f 1) => 1
+ (f 1) => 1
+ (provided* (f 1) => 1))
 ;; fact/facts will not
 (facts
  :facts+
- (facts+helper 1) => 1
- (provided (facts+helper 1) => 1)
- (facts+helper 1) => 1
- (provided (facts+helper 1) => 1))
+ (f 1) => 1
+ (provided (f 1) => 1)
+ (f 1) => 1
+ (provided (f 1) => 1))
 
 ;; facts+ can inherit in a tree-like pattern to create more complex tests /
 ;; minimize repetition
 (facts+
  :facts+
  (facts
-   (+ (facts+helper 1) (facts+helper 2)) => 3
-   (provided (facts+helper 2) => 2))
+   (+ (f 1) (f 2)) => 3
+   (provided (f 2) => 2))
  (facts
-   (+ (facts+helper 1) (facts+helper 2)) => 4
-   (provided (facts+helper 2) => 3))
- (provided* (facts+helper 1) => 1))
+   (+ (f 1) (f 2)) => 4
+   (provided (f 2) => 3))
+ (provided* (f 1) => 1))
 
 (facts+
  :a
@@ -468,7 +463,7 @@
 (facts+
  :facts+
  1 => 1
- (provided+ :nocall facts+helper))
+ (provided+ :nocall f))
 
 ;; write new shortcuts for your own use cases
 (defprovided odd-calls (odd-calls & anything) => irrelevant :times odd?)
@@ -481,8 +476,15 @@
 
 (facts+
  :facts+
- (facts+helper 3) => irrelevant ; this causes the provided form to fail
- (provided+ :odd-calls facts+helper))
+ (f 3) => irrelevant ; this causes the provided form to fail
+ (provided+ :odd-calls f))
+
+(defnprovided three [f num] (f num) => 3)
+
+(facts+
+ :facts+
+ (f 42) => 3
+ (provided+ :three [f 42]))
 
 ;; propagate metadata
 (facts+
@@ -491,6 +493,9 @@
 (facts
  :facts+
  (fact 1 => 1)) ;; doesn't get called when filtering for facts+
+
+(facts+ :a
+  (facts+ :b 1 => 1)) ;; gets called when filtering for :a, :b, or both
 
 ;; don't ignore extra docstrings
 (facts+
